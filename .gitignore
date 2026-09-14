@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.eggs/
+build/
+dist/
+
+# PlasMEEP simulation outputs
+outputs/
+
+# Meep / MPB scratch files
+*.h5
+*-out/
