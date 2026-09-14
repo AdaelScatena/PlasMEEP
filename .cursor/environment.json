@@ -1,0 +1,4 @@
+{
+  "name": "PlasMEEP",
+  "install": "bash .cursor/install.sh"
+}
