@@ -1,0 +1,23 @@
+Metadata-Version: 2.4
+Name: plasmeep
+Version: 0.0
+Summary: Plasma-themed wrapper for meep.
+Download-URL: https://github.com/JesseRodriguez/PlasMEEP
+Author: Jesse A. Rodriguez
+Author-email: jrodrig@stanford.edu
+License-File: LICENSE
+Requires-Dist: autograd
+Requires-Dist: h5py
+Requires-Dist: jax
+Requires-Dist: jaxlib
+Requires-Dist: matplotlib
+Requires-Dist: numpy
+Requires-Dist: parameterized
+Requires-Dist: pytest
+Requires-Dist: scipy
+Dynamic: author
+Dynamic: author-email
+Dynamic: download-url
+Dynamic: license-file
+Dynamic: requires-dist
+Dynamic: summary

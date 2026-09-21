@@ -21,7 +21,7 @@ gamma = 0#10**9 #Hz
 Fs = np.array([fs,fp,gamma])
 k_ps = 30
 
-Pol = [0,0,1]
+Pol = np.array([0,0,1], dtype=complex)
 size = mp.Vector3(0,0,0)
 E = False
 
