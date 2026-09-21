@@ -54,7 +54,7 @@ model.Add_Rod(R_p, [0,0,0], eps = 1.0)
 
 #place 5 waveguide feeds around the scaffold
 n_ports = 5
-R_port = r_in+0.8 #radial distance to waveguide center
+R_port = r_out+0.8 #radial distance to waveguide center
 w = 0.8 #waveguide width
 l = 0.8 #waveguide length
 eps_wg = 4.0 #dielectric feed
