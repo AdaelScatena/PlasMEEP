@@ -19,8 +19,8 @@ r_out = 5.0 #scaffold outer radius
 eps_scaffold = 4.0 #placeholder uniform dielectricc - design variable
 
 #domain size of a
-nx = 24
-ny = 24
+nx = 28
+ny = 28
 
 #probe band in MEEP frequency units
 f_min = 0.1
@@ -56,9 +56,9 @@ model.geometry.append(
 
 #place 5 waveguide feeds around the scaffold
 n_ports = 5
-R_port = r_out+0.8 #radial distance to waveguide center
 w = 0.8 #waveguide width
-l = 0.8 #waveguide length
+l = 3.0 #waveguide length
+R_port = r_out+1.5+1/2
 eps_wg = 4.0 #dielectric feed
 
 port_centers = []
@@ -143,3 +143,52 @@ sim.plot2D()
 plt.title('Phase 1.3: scaffold + Drude shell')
 plt.savefig('geometry_1_3_part1.png', dpi=200, bbox_inches='tight')
 print('Done')
+
+#Make horns 1 source + all collections
+nfreq = 21 #number of frequencies
+frequencies = np.linspace(f_min, f_max, nfreq) #array of frequencies
+fcen = 0.5*(f_min + f_max) #center frequency
+df = f_max-f_min #change in frequency from minimum to maximum
+
+cx0, cy0, theta0 = port_centers[0]
+
+#define meep eigenmode source
+sources = [
+    mp.EigenModeSource(
+        src=mp.GaussianSource(frequency=fcen, fwidth=df),
+        center=mp.Vector3(cx0, cy0, 0),
+        size=mp.Vector3(0, w, 0),
+        direction=mp.NO_DIRECTION,
+        eig_kpoint=mp.Vector3(-np.cos(theta0), -np.sin(theta0)),
+        eig_band=1,
+        eig_parity=mp.ODD_Z,
+        eig_match_freq=True,
+    )
+]
+
+eig_kpoint = mp.Vector3(-np.cos(theta0), -np.sin(theta0))
+
+model.sources = sources
+sim = model.Get_Sim()
+
+mode_monitors = []
+for (cx, cy, theta) in port_centers:
+    m = sim.add_mode_monitor(
+        fcen, df, nfreq,
+        mp.ModeRegion(center=mp.Vector3(cx, cy, 0), size=mp.Vector3(0, w, 0)),
+    )
+    mode_monitors.append(m)
+sim.run(until_after_sources=20)   # once, after the loop
+coeffs = []
+for m in mode_monitors:
+    alpha = sim.get_eigenmode_coefficients(m, [1]).alpha
+    coeffs.append(alpha)
+
+
+coeffs = np.array(coeffs)
+print('coeff shape:', coeffs.shape)
+print('port 0 |c| vs freq (dir 0):', np.abs(coeffs[0, 0, :, 0]))
+print('port 0 |c| vs freq (dir 1):', np.abs(coeffs[0, 0, :, 1]))
+print('all ports, mid freq, both dirs:\n', np.abs(coeffs[:, 0, nfreq//2, :]))
+
+    
