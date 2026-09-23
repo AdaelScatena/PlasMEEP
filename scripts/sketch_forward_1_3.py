@@ -5,7 +5,7 @@ from scipy.optimize import brentq
 from plasmeep.lib import Plasmeep as pm, WP
 import meep as mp
 
-#Annulus build
+# ***Annulus build***
 
 #length scale
 a = 0.01 # meters
@@ -52,7 +52,7 @@ model.geometry.append(
     )
 )
 
-#Port build
+#  ***Port build***
 
 #place 5 waveguide feeds around the scaffold
 n_ports = 5
@@ -82,10 +82,11 @@ for k in range(n_ports):
         )
     )
 
+#port check via geometry print
 print('port angles (deg):', [p[2] *180/np.pi for p in port_centers])
 print('Source ports for later: k=0 and k=2 (144 deg apart)')
 
-#Plasma column build
+#  ***Plasma column build***
 
 r = np.linspace(0,R_p,200)
 BETA_SCHOTTKY = jn_zeros(0,1)[0]  
@@ -137,22 +138,25 @@ for i in range(N_shells, 0, -1):
     shell_n.append(n_i)
     print(f"shell {i:2d}: r_mid={r_mid_shell:.3f}, n={n_i:.3e} m^-3, fp={fp_Hz/1e9:.2f} GHz")
 
-#show plot
+
+#  ***Add source to 1 horn***
+
+cx0, cy0, theta0 = port_centers[0] #define source horn index
+
+#show simulation with marked source horn
 sim = model.Get_Sim()
 sim.plot2D()
+plt.plot(cx0, cy0, 'o', color='red', markersize=10, label='source port') #mark which port is the source port
+plt.legend()
 plt.title('Phase 1.3: scaffold + Drude shell')
 plt.savefig('geometry_1_3_part1.png', dpi=200, bbox_inches='tight')
-print('Done')
 
-#Make horns 1 source + all collections
 nfreq = 21 #number of frequencies
 frequencies = np.linspace(f_min, f_max, nfreq) #array of frequencies
 fcen = 0.5*(f_min + f_max) #center frequency
 df = f_max-f_min #change in frequency from minimum to maximum
 
-cx0, cy0, theta0 = port_centers[0]
-
-#define meep eigenmode source
+#define meep eigenmode source at indexed horn center
 sources = [
     mp.EigenModeSource(
         src=mp.GaussianSource(frequency=fcen, fwidth=df),
