@@ -1,9 +1,11 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.special import j0, jn_zeros
 from scipy.optimize import brentq
 from plasmeep.lib import Plasmeep as pm, WP
 import meep as mp
+from scipy.interpolate import RegularGridInterpolator
 
 # ***Annulus build***
 
@@ -32,9 +34,6 @@ print('probe band:', f_min*30, 'to', f_max*30, 'GHz')
 
 #create empty simulation 'box'
 model = pm(a, res, dpml, nx, ny)
-
-print('cell size (in units of a):', model.cell)
-print('PML thickness', dpml)
 
 # Circular scaffold annulus
 model.geometry.append(
@@ -81,10 +80,6 @@ for k in range(n_ports):
             material=medium,
         )
     )
-
-#port check via geometry print
-print('port angles (deg):', [p[2] *180/np.pi for p in port_centers])
-print('Source ports for later: k=0 and k=2 (144 deg apart)')
 
 #  ***Plasma column build***
 
@@ -138,61 +133,32 @@ for i in range(N_shells, 0, -1):
     shell_n.append(n_i)
     print(f"shell {i:2d}: r_mid={r_mid_shell:.3f}, n={n_i:.3e} m^-3, fp={fp_Hz/1e9:.2f} GHz")
 
-
-#  ***Add source to 1 horn***
-
-cx0, cy0, theta0 = port_centers[0] #define source horn index
-
-#show simulation with marked source horn
+cx0, cy0, theta0 = port_centers[0]
 sim = model.Get_Sim()
 sim.plot2D()
-plt.plot(cx0, cy0, 'o', color='red', markersize=10, label='source port') #mark which port is the source port
-plt.legend()
-plt.title('Phase 1.3: scaffold + Drude shell')
-plt.savefig('geometry_1_3_part1.png', dpi=200, bbox_inches='tight')
+plt.plot(cx0, cy0, 'o', color='red', markersize=8, label='source horn')
+plt.legend(loc='upper right')
+plt.title('Phase 1.3: Sketch geometry')
+image_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "images")
+os.makedirs(image_dir, exist_ok=True)
+plt.savefig(os.path.join(image_dir, "geometry_1_3.png"), dpi=200, bbox_inches="tight")
+print('Complete')
+print('source horn k=0 at', theta0 * 180/np.pi, 'deg')
 
-nfreq = 21 #number of frequencies
-frequencies = np.linspace(f_min, f_max, nfreq) #array of frequencies
-fcen = 0.5*(f_min + f_max) #center frequency
-df = f_max-f_min #change in frequency from minimum to maximum
-
-#define meep eigenmode source at indexed horn center
-sources = [
-    mp.EigenModeSource(
-        src=mp.GaussianSource(frequency=fcen, fwidth=df),
-        center=mp.Vector3(cx0, cy0, 0),
-        size=mp.Vector3(0, w, 0),
-        direction=mp.NO_DIRECTION,
-        eig_kpoint=mp.Vector3(-np.cos(theta0), -np.sin(theta0)),
-        eig_band=1,
-        eig_parity=mp.ODD_Z,
-        eig_match_freq=True,
-    )
-]
-
-eig_kpoint = mp.Vector3(-np.cos(theta0), -np.sin(theta0))
-
-model.sources = sources
+nfreq = 21
+fcen = 0.5*(f_min+f_max)
+df = f_max - f_min
+span = 4.0
+model.sources = [mp.EigenModeSource(
+    src=mp.GaussianSource(frequency=fcen, fwidth=df),
+    center=mp.Vector3(cx0, cy0, 0),
+    size=mp.Vector3(0, span, 0),
+    direction=mp.X,
+    eig_kpoint=mp.Vector3(-1, 0, 0),
+    eig_band=1,
+    eig_parity=mp.ODD_Z,
+    eig_match_freq=True,
+)]
 sim = model.Get_Sim()
-
-mode_monitors = []
-for (cx, cy, theta) in port_centers:
-    m = sim.add_mode_monitor(
-        fcen, df, nfreq,
-        mp.ModeRegion(center=mp.Vector3(cx, cy, 0), size=mp.Vector3(0, w, 0)),
-    )
-    mode_monitors.append(m)
-sim.run(until_after_sources=20)   # once, after the loop
-coeffs = []
-for m in mode_monitors:
-    alpha = sim.get_eigenmode_coefficients(m, [1]).alpha
-    coeffs.append(alpha)
-
-
-coeffs = np.array(coeffs)
-print('coeff shape:', coeffs.shape)
-print('port 0 |c| vs freq (dir 0):', np.abs(coeffs[0, 0, :, 0]))
-print('port 0 |c| vs freq (dir 1):', np.abs(coeffs[0, 0, :, 1]))
-print('all ports, mid freq, both dirs:\n', np.abs(coeffs[:, 0, nfreq//2, :]))
-
-    
+sim.run(until_after_sources=mp.stop_when_fields_decayed(
+    50, mp.Ez, mp.Vector3(cx0, cy0, 0), 1e-3))
