@@ -28,9 +28,9 @@ ny = 28
 f_min = 0.1
 f_max = 0.3
 
-print('a =', a, 'm')
-print('f=1 in MEEP <->', 3e8/a/1e9, 'GHz')
-print('probe band:', f_min*30, 'to', f_max*30, 'GHz')
+#print('a =', a, 'm')
+#print('f=1 in MEEP <->', 3e8/a/1e9, 'GHz')
+#print('probe band:', f_min*30, 'to', f_max*30, 'GHz')
 
 #create empty simulation 'box'
 model = pm(a, res, dpml, nx, ny)
@@ -131,7 +131,7 @@ for i in range(N_shells, 0, -1):
 
     shell_r.append(r_mid_shell)
     shell_n.append(n_i)
-    print(f"shell {i:2d}: r_mid={r_mid_shell:.3f}, n={n_i:.3e} m^-3, fp={fp_Hz/1e9:.2f} GHz")
+    #print(f"shell {i:2d}: r_mid={r_mid_shell:.3f}, n={n_i:.3e} m^-3, fp={fp_Hz/1e9:.2f} GHz")
 
 # ***Source and receiver horns***
 
@@ -193,9 +193,9 @@ for k, (cx, cy, theta) in enumerate(port_centers):
         center=(cx, cy),
         size=size_k,
     ))
-    print(f"horn {k}: theta={theta*180/np.pi:.1f} deg, receiver")
+    #print(f"horn {k}: theta={theta*180/np.pi:.1f} deg, receiver")
 
-print(f"source horn k={k_src} at {theta0*180/np.pi:.1f} deg, launching inward")
+#print(f"source horn k={k_src} at {theta0*180/np.pi:.1f} deg, launching inward")
 
 sim.plot2D()
 for rec in receivers:
@@ -218,7 +218,7 @@ plt.title("Phase 1.4: source and receiver horns")
 image_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "images")
 os.makedirs(image_dir, exist_ok=True)
 plt.savefig(os.path.join(image_dir, "measure_1_4.png"), dpi=200, bbox_inches="tight")
-print("Wrote measure_1_4.png")
+#print("Wrote measure_1_4.png")
 
 # ***Collect port signals***
 
@@ -226,9 +226,9 @@ sim.run(until_after_sources=mp.stop_when_dft_decayed(
     tol=1e-4, maximum_run_time=500))
 
 freqs = np.array(mp.get_eigenmode_freqs(receivers[0]["monitor"]))
-print("Collected mode signals")
-print("a_out leaves the device through that horn. a_in enters it.")
-print(f"source horn is k={k_src}")
+#print("Collected mode signals")
+#print("a_out leaves the device through that horn. a_in enters it.")
+#print(f"source horn is k={k_src}")
 for rec in receivers:
     k_out = rec["k_out"]
     coeffs = sim.get_eigenmode_coefficients(
@@ -244,12 +244,12 @@ for rec in receivers:
     rec["a_in"] = a_in
     theta = port_centers[rec["k"]][2]
     role = "source + receiver" if rec["k"] == k_src else "receiver"
-    print(f"horn {rec['k']} ({role}), theta={theta*180/np.pi:.1f} deg")
-    print(f"{'f_GHz':>8} {'a_out_re':>12} {'a_out_im':>12} {'|a_out|^2':>12}"
-          f" {'a_in_re':>12} {'a_in_im':>12} {'|a_in|^2':>12}")
-    for f, ao, ai in zip(freqs, a_out, a_in):
-        print(f"{f*30:8.3f} {ao.real:12.4e} {ao.imag:12.4e} {abs(ao)**2:12.4e}"
-              f" {ai.real:12.4e} {ai.imag:12.4e} {abs(ai)**2:12.4e}")
+    #print(f"horn {rec['k']} ({role}), theta={theta*180/np.pi:.1f} deg")
+    #print(f"{'f_GHz':>8} {'a_out_re':>12} {'a_out_im':>12} {'|a_out|^2':>12}"
+    #      f" {'a_in_re':>12} {'a_in_im':>12} {'|a_in|^2':>12}")
+    #for f, ao, ai in zip(freqs, a_out, a_in):
+    #    print(f"{f*30:8.3f} {ao.real:12.4e} {ao.imag:12.4e} {abs(ao)**2:12.4e}"
+    #          f" {ai.real:12.4e} {ai.imag:12.4e} {abs(ai)**2:12.4e}")
 
 # ***S parameters***
 
