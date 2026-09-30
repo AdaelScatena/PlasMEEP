@@ -16,16 +16,34 @@ dpml = 5.0 # PML thickness in units of a
 
 #geometry units of a
 R_p = 1.5 #plasma radius
-r_in = 2.0 #scaffold inner radius
-r_out = 5.0 #scaffold outer radius
+r_in = 2.0 #scaffold inner radius (vacuum hole around the plasma)
 eps_scaffold = 4.0 #placeholder uniform dielectricc - design variable
 
-#domain size of a
-nx = 28
-ny = 28
+#  ***Horn dimensions (InversePMMDesign Add_INFOMW_Horn, TM orientation)***
+# Metal-walled horn that matches the lab's microwave horns. Sizes are in
+# meters in the original and are converted to units of a here.
+n_ports = 5
+wall_t = 0.004/a #wall thickness
+width_open = 0.104/a #outer width at the aperture
+width_base = 0.048/a #outer width at the throat / feed waveguide
+depth = 0.089/a #flare length, aperture to throat
+w_feed_in = width_base - 2*wall_t #inner width of the feed waveguide
+
+#  ***Pentagon scaffold***
+# One horn aperture per side, so the side length is the aperture width.
+side = width_open
+apothem = side/(2*np.tan(np.pi/n_ports)) #center to middle of a side
+R_pent = side/(2*np.sin(np.pi/n_ports)) #center to a vertex
+
+#domain size of a. Feed guides run straight out into the PML, as in the
+#InversePMMDesign scripts, so the cell is sized around the horns.
+nx = 52
+ny = 52
 
 #probe band in MEEP frequency units
-f_min = 0.1
+#The metal feed guide cuts off below f = 1/(2*w_feed_in) = 0.125 (3.75 GHz),
+#so f_min sits just above cutoff. Above 0.25 the feed also carries mode 2.
+f_min = 0.14
 f_max = 0.3
 
 #print('a =', a, 'm')
@@ -35,14 +53,13 @@ f_max = 0.3
 #create empty simulation 'box'
 model = pm(a, res, dpml, nx, ny)
 
-# Circular scaffold annulus
-model.geometry.append(
-    mp.Cylinder(
-        radius=r_out,
-        material=model.Get_Med(eps_scaffold),
-        center=mp.Vector3(0, 0, 0),
-    )
-)
+# Side k faces the direction theta_k = k*72 deg. Vertices sit halfway between.
+port_thetas = [k*2*np.pi/n_ports for k in range(n_ports)]
+pent_vertices = np.array([
+    [R_pent*np.cos(t + np.pi/n_ports), R_pent*np.sin(t + np.pi/n_ports), 0]
+    for t in port_thetas
+])
+model.Add_Prism(pent_vertices, eps=eps_scaffold)
 model.geometry.append(
     mp.Cylinder(
         radius=r_in,
@@ -51,35 +68,69 @@ model.geometry.append(
     )
 )
 
-#  ***Port build***
+#  ***Horn build***
 
-#place 5 waveguide feeds around the scaffold
-n_ports = 5
-w = 0.8 #waveguide width
-l = 3.0 #waveguide length
-R_port = r_out+1.5+1/2
-eps_wg = 4.0 #dielectric feed
+def add_infomw_horn(model, open_cen, horn_dir, entrance_length,
+                    wall_t=0.4, width_open=10.4, width_base=4.8, depth=8.9):
+    """Metal horn walls, ported from InversePMMDesign PMMI.Add_INFOMW_Horn.
 
-port_centers = []
-for k in range(n_ports):
-    theta = k*2*np.pi/n_ports #0, 72, 144, 216, 288 degrees
-    cx = R_port*np.cos(theta)
-    cy = R_port*np.sin(theta)
-    port_centers.append((cx, cy, theta))         
+    All lengths are in units of a (defaults are the lab horn at a = 1 cm).
+    open_cen: (x, y) center of the aperture
+    horn_dir: unit vector pointing out of the aperture, toward the device
+    entrance_length: length of the straight feed waveguide behind the flare
+    Appends four PEC prisms to model.geometry: two flared walls, two feed walls.
+    """
+    cx, cy = float(open_cen[0]), float(open_cen[1])
+    dx, dy = float(horn_dir[0]), float(horn_dir[1])
+    ox, oy = dy, -dx #unit vector across the horn
+    back = depth + entrance_length
 
-    # Unit vectors: e1 along the waveguide (radial), e2 across it
-    e1 = mp.Vector3(np.cos(theta), np.sin(theta), 0)   # length direction
-    e2 = mp.Vector3(-np.sin(theta), np.cos(theta), 0)  # width direction
-    medium = model.Get_Med(eps_wg)
-    model.geometry.append(
-        mp.Block(
-            size=mp.Vector3(l, w, mp.inf),
-            center=mp.Vector3(cx, cy, 0),
-            e1=e1,
-            e2=e2,
-            material=medium,
-        )
+    def pt(across, along):
+        #point at 'across' from the horn axis and 'along' behind the aperture
+        return mp.Vector3(cx + across*ox - along*dx, cy + across*oy - along*dy, 0)
+
+    for sgn in (1, -1):
+        flare = [
+            pt(sgn*width_open/2, 0),
+            pt(sgn*(width_open/2 - wall_t), 0),
+            pt(sgn*(width_base/2 - wall_t), depth),
+            pt(sgn*width_base/2, depth),
+        ]
+        feed = [
+            pt(sgn*(width_base/2 - wall_t), depth),
+            pt(sgn*width_base/2, depth),
+            pt(sgn*width_base/2, back),
+            pt(sgn*(width_base/2 - wall_t), back),
+        ]
+        for verts in (flare, feed):
+            model.geometry.append(
+                mp.Prism(
+                    vertices=verts,
+                    height=mp.inf,
+                    axis=mp.Vector3(0, 0, 1),
+                    material=mp.perfect_electric_conductor,
+                )
+            )
+
+# Run each feed guide straight out until it is dpml/2 deep in the PML.
+# A ray at angle theta hits the square |x|,|y| = h at h/max(|cos|,|sin|).
+h_end = nx/2 - dpml/2
+r_throat = apothem + depth #radial position of the flare-to-feed junction
+
+port_centers = [] #receiver point on each feed guide, and its angle
+for theta in port_thetas:
+    c, s = np.cos(theta), np.sin(theta)
+    r_end = h_end/max(abs(c), abs(s))
+    add_infomw_horn(
+        model,
+        open_cen=(apothem*c, apothem*s),
+        horn_dir=(-c, -s),
+        entrance_length=r_end - r_throat,
+        wall_t=wall_t, width_open=width_open,
+        width_base=width_base, depth=depth,
     )
+    r_rec = r_throat + 1.0 #1 a into the feed, where the mode is clean
+    port_centers.append((r_rec*c, r_rec*s, theta))
 
 #  ***Plasma column build***
 
@@ -140,7 +191,6 @@ k_src = 0
 nfreq = 21
 fcen = 0.5*(f_min + f_max)
 df = f_max - f_min
-span = 4.0 #cut across the horn
 
 def horn_cut(theta):
     """Axis-aligned line across a horn, and the outward radial k-point.
@@ -151,6 +201,8 @@ def horn_cut(theta):
     """
     c = float(np.cos(theta))
     s = float(np.sin(theta))
+    # Oblique chord across the feed guide, ending halfway into each wall.
+    span = (w_feed_in + wall_t)/max(abs(c), abs(s))
     if abs(c) >= abs(s):
         size = mp.Vector3(0, span, 0)
     else:
@@ -159,7 +211,7 @@ def horn_cut(theta):
     return size, k_out
 
 cx0, cy0, theta0 = port_centers[k_src]
-r_src = R_port + 1.0 #outboard of the receiver line, still on the horn
+r_src = r_throat + 2.5 #outboard of the receiver line, still in the feed
 sx = r_src*np.cos(theta0)
 sy = r_src*np.sin(theta0)
 size_src, k_out_src = horn_cut(theta0)
@@ -193,9 +245,9 @@ for k, (cx, cy, theta) in enumerate(port_centers):
         center=(cx, cy),
         size=size_k,
     ))
-    #print(f"horn {k}: theta={theta*180/np.pi:.1f} deg, receiver")
+    print(f"horn {k}: theta={theta*180/np.pi:.1f} deg, receiver")
 
-#print(f"source horn k={k_src} at {theta0*180/np.pi:.1f} deg, launching inward")
+print(f"source horn k={k_src} at {theta0*180/np.pi:.1f} deg, launching inward")
 
 sim.plot2D()
 for rec in receivers:
@@ -214,11 +266,11 @@ plt.plot(
 plt.plot(sx, sy, "o", color="red", markersize=8, label="source horn")
 plt.plot([], [], "s", color="dodgerblue", label="receiver horns")
 plt.legend(loc="upper right")
-plt.title("Phase 1.4: source and receiver horns")
+plt.title("Phase 1.4: pentagon scaffold, InfoMW horns")
 image_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "images")
 os.makedirs(image_dir, exist_ok=True)
 plt.savefig(os.path.join(image_dir, "measure_1_4.png"), dpi=200, bbox_inches="tight")
-#print("Wrote measure_1_4.png")
+print("Wrote measure_1_4.png")
 
 # ***Collect port signals***
 
@@ -226,9 +278,9 @@ sim.run(until_after_sources=mp.stop_when_dft_decayed(
     tol=1e-4, maximum_run_time=500))
 
 freqs = np.array(mp.get_eigenmode_freqs(receivers[0]["monitor"]))
-#print("Collected mode signals")
-#print("a_out leaves the device through that horn. a_in enters it.")
-#print(f"source horn is k={k_src}")
+print("Collected mode signals")
+print("a_out leaves the device through that horn. a_in enters it.")
+print(f"source horn is k={k_src}")
 for rec in receivers:
     k_out = rec["k_out"]
     coeffs = sim.get_eigenmode_coefficients(
@@ -244,12 +296,12 @@ for rec in receivers:
     rec["a_in"] = a_in
     theta = port_centers[rec["k"]][2]
     role = "source + receiver" if rec["k"] == k_src else "receiver"
-    #print(f"horn {rec['k']} ({role}), theta={theta*180/np.pi:.1f} deg")
-    #print(f"{'f_GHz':>8} {'a_out_re':>12} {'a_out_im':>12} {'|a_out|^2':>12}"
-    #      f" {'a_in_re':>12} {'a_in_im':>12} {'|a_in|^2':>12}")
-    #for f, ao, ai in zip(freqs, a_out, a_in):
-    #    print(f"{f*30:8.3f} {ao.real:12.4e} {ao.imag:12.4e} {abs(ao)**2:12.4e}"
-    #          f" {ai.real:12.4e} {ai.imag:12.4e} {abs(ai)**2:12.4e}")
+    print(f"horn {rec['k']} ({role}), theta={theta*180/np.pi:.1f} deg")
+    print(f"{'f_GHz':>8} {'a_out_re':>12} {'a_out_im':>12} {'|a_out|^2':>12}"
+          f" {'a_in_re':>12} {'a_in_im':>12} {'|a_in|^2':>12}")
+    for f, ao, ai in zip(freqs, a_out, a_in):
+        print(f"{f*30:8.3f} {ao.real:12.4e} {ao.imag:12.4e} {abs(ao)**2:12.4e}"
+              f" {ai.real:12.4e} {ai.imag:12.4e} {abs(ai)**2:12.4e}")
 
 # ***S parameters***
 
@@ -265,4 +317,3 @@ for rec in receivers:
     print(f"{'f_GHz':>8} {'S_re':>12} {'S_im':>12} {'|S|':>12} {'|S|^2':>12}")
     for f, s in zip(freqs, S):
         print(f"{f*30:8.3f} {s.real:12.4e} {s.imag:12.4e} {abs(s):12.4e} {abs(s)**2:12.4e}")
-
