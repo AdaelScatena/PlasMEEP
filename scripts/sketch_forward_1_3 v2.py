@@ -5,6 +5,9 @@ import meep as mp
 import meep.adjoint as mpa
 import autograd.numpy as npa #numpy that the adjoint solver can differentiate
 from plasmeep.lib import Plasmeep as pm
+from scipy.special import j0, jn_zeros
+from scipy.optimize import brentq
+from plasmeep.lib import Plasmeep as pm, WP
 
 
 # ***Units and domain***
@@ -16,7 +19,7 @@ ny = 52
 
 RUN_SIM = True #False: build and plot the geometry only. True: also run and get S-parameters.
 
-# ***Scaffold and plasma***
+# ***Scaffold ***
 R_p = 1.5 #plasma radius
 r_in = 2.0 #vacuum hole around the plasma
 eps_scaffold = 4.0 #placeholder uniform dielectric - design variable
@@ -62,6 +65,43 @@ model.geometry.append(
         center=mp.Vector3(0, 0, 0),
     )
 )
+
+# ***Plasma***
+# ***Plasma column (guide Phase 1.2)***
+# n_e(r) = n0*J0(beta*r/R_p), built as concentric Drude shells.
+# Must come AFTER the vacuum hole, or the hole paints over it.
+BETA_SCHOTTKY = jn_zeros(0, 1)[0]
+
+def bessel_profile(r, n0, beta, R_p):
+    """n_e(r) = n0*J0(beta*r/R_p)."""
+    return n0*j0(beta*r/R_p)
+
+def beta_from_h(h):
+    #h = J0(beta) = edge-to-center ratio, beta in (0, 2.405]
+    return brentq(lambda b: j0(b) - h, 1e-6, BETA_SCHOTTKY)
+
+N_shells = 12
+n0_si = 5e16 #peak density, m^-3 (peak f_p ~ 2 GHz)
+h_ex = 0.4 #edge-to-center ratio
+beta_ex = beta_from_h(h_ex)
+gamma_meep = model.Nondimensionalize_Freq(1e9) #collision rate gamma/2pi = 1 GHz
+
+shell_r, shell_n = [], []
+for i in range(N_shells, 0, -1): #largest first, smaller shells paint over
+    r_out = R_p*i/N_shells
+    r_mid = R_p*(i - 0.5)/N_shells
+    n_i = max(float(bessel_profile(r_mid, n0_si, beta_ex, R_p)), 1e10)
+    wp_meep = model.Nondimensionalize_Freq(WP(n_i)/(2*np.pi))
+    model.geometry.append(
+        mp.Cylinder(
+            radius=r_out,
+            material=model.Get_Med(1.0, wp=wp_meep, gamma=gamma_meep),
+            center=mp.Vector3(0, 0, 0),
+        )
+    )
+    shell_r.append(r_mid)
+    shell_n.append(n_i)
+print(f"plasma: n0 = {n0_si:.1e} m^-3, h = {h_ex}, beta = {beta_ex:.3f}, {N_shells} shells")
 
 # ***Horns***
 #function creates horn with correct shape
